@@ -14,12 +14,10 @@ import requests
 import jmespath
 from pathlib import Path
 
+from includes import Spreadsheet
+
 # I think this is python-telegram-bot
 import telegram
-
-# important - needs to run pip3 install python-mysql-connector
-import mysql.connector
-
 import logging
 
 # Create a logger
@@ -31,20 +29,17 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+current_path=os.path.dirname(os.path.abspath(__file__))
+
+# Local time doings
+def localtime(inputTime):
+    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(inputTime))
 
 # This needs the following environment variables to be created:
 
 # Telegram goodness
 # export telegramBotToken="YOUR_TELEGRAM_BOT_TOKEN"
 # export telegramChatId="YOUR_PERSONAL_CHAT_ID"
-
-# Database credentials
-# export dbUser="YOUR_DB_USER"
-# export dbPass="YOUR_DB_PASS"
-# export dbHost="YOUR_DB_HOST"
-# export dbName="YOUR_DB_NAME" # eg solar
-# export dbTable="YOUR_DB_TABLE" # if you use the schema in solarday.sql it will be solarDay
-# export dbPort="YOUR_DB_PORT" # normally 3306
 
 # Octopus variables
 # export octopusURL="https://api.octopus.energy"
@@ -148,10 +143,8 @@ def get_consumed_data(octopusInfo, date_query):
     return results
 
 
-def update_octopus_usage(dbInfo, octopusInfo, date_query):
+def update_octopus_usage(sheet, octopusInfo, date_query):
     logger.info(f"running update_octopus_usage function for {date_query}")
-    table = octopusInfo["InTable"]
-
     price_data = get_price_data(octopusInfo, date_query)
     consumed_data = get_consumed_data(octopusInfo, date_query)
     results = True
@@ -179,89 +172,35 @@ def update_octopus_usage(dbInfo, octopusInfo, date_query):
 
     if results:
         logger.debug("We have consumed and price results, so carry on")
-        db_ready = False
-        last_night = []
-        logger.debug(f"Connecting to database {dbInfo['dbname']} on {dbInfo['dbhost']}")
-        try:
-            cnx = mysql.connector.connect(
-                user=dbInfo["dbuser"],
-                password=dbInfo["dbpass"],
-                host=dbInfo["dbhost"],
-                port=dbInfo["dbport"],
-                database=dbInfo["dbname"],
-                auth_plugin="mysql_native_password",
-            )
-            db_ready = True
-        except Exception as e:
-            logger.error(f"DB connection didn't work sorry because {str(e)}")
+        last_overnight = []
 
-        if db_ready:
-            # check to see if there's already data
-            logger.debug(f"Checking to see if there's already data for {date_query}")
+        logger.debug(f"Checking to see if there's already data for {date_query}")
+        # TODO: check the spreadsheet for data
 
-            sql = (
-                "select count(consumed) as `QTY` from %s where year= %s and month = %s and day = %s"
-                % (
-                    table,
-                    int(date_query[:4]),
-                    int(date_query[5:7]),
-                    int(date_query[8:10]),
-                )
-            )
-            cursor = cnx.cursor()
-            try:
-                cursor.execute(sql)
-                for (QTY,) in cursor:
-                    if int(QTY) == 0:
-                        new_data = True
-            except Exception as e:
-                logger.error(
-                    f"current data select query didn't work sorry because {str(e)}"
-                )
-            cursor.close()
-
-            logger.debug("Looping through the results of consumed_data")
-            for each_result in consumed_data["results"]:
-                for each_price in price_data["results"]:
-                    id = {}
-                    if each_price["valid_from"] == each_result["interval_start"]:
-                        # this is where the database stuff comes in
-                        id["year"] = each_result["interval_start"][:4]
-                        id["month"] = each_result["interval_start"][5:7]
-                        id["day"] = each_result["interval_start"][8:10]
-                        id["hour"] = each_result["interval_start"][11:13]
-                        id["minute"] = each_result["interval_start"][14:16]
-                        id["consumed"] = each_result["consumption"]
-                        id["price"] = each_price["value_inc_vat"]
-                        if int(id["hour"]) >= 0 and int(id["hour"]) <= 6:
-                            last_night.append(id)
-                        logger.debug(
-                            f"{id['year']}-{id['month']}-{id['day']} {id['hour']}:{id['minute']} - {id['consumed']} kWh @ £{id['price']/100}"
-                        )
-                        placeholders = ", ".join(["%s"] * len(id))
-                        columns = ", ".join(id.keys())
-                        sql = "REPLACE INTO %s ( %s ) VALUES ( %s )" % (
-                            table,
-                            columns,
-                            placeholders,
-                        )
-                        logger.debug(f"carrying out REPLACE INTO on table {table}")
-                        try:
-                            cursor = cnx.cursor()
-                            cursor.execute(sql, list(id.values()))
-                            cnx.commit()
-                            cursor.close()
-                        except Exception as e:
-                            logger.error(
-                                f"The insert didn't work. Here's why: {str(e)}"
-                            )
-            cnx.close()
-            if new_data:
-                logger.debug("last_night is new - returning it")
-                return last_night
-            else:
-                logger.debug("last_night is not new - returning empty set")
-                return []
+        logger.debug("Looping through the results of consumed_data")
+        for each_result in consumed_data["results"]:
+            for each_price in price_data["results"]:
+                id = {}
+                if each_price["valid_from"] == each_result["interval_start"]:
+                    # this is where the database stuff comes in
+                    id["year"] = each_result["interval_start"][:4]
+                    id["month"] = each_result["interval_start"][5:7]
+                    id["day"] = each_result["interval_start"][8:10]
+                    id["hour"] = each_result["interval_start"][11:13]
+                    id["minute"] = each_result["interval_start"][14:16]
+                    id["consumed"] = each_result["consumption"]
+                    id["price"] = each_price["value_inc_vat"]
+                    if int(id["hour"]) >= 0 and int(id["hour"]) <= 6:
+                        last_overnight.append(id)
+                    logger.debug(
+                        f"{id['year']}-{id['month']}-{id['day']} {id['hour']}:{id['minute']} - {id['consumed']} kWh @ £{id['price']/100}"
+                    )
+            # TODO: replace into the spreadsheet
+        if new_data:
+            logger.debug("last_overnight is new - returning it")
+        else:
+            logger.debug("last_overnight is not new - returning empty set")
+        return last_overnight
 
 
 def main():
@@ -270,14 +209,12 @@ def main():
     mychatid = os.environ.get("telegramChatId")
 
     # Database credentials for the conkers
-    dbInfo = {
-        "dbuser": os.environ.get("dbUser"),
-        "dbpass": os.environ.get("dbPass"),
-        "dbhost": os.environ.get("dbHost"),
-        "dbname": os.environ.get("dbName"),
-        "dbport": os.environ.get("dbPort"),
-        "dbtable": os.environ.get("dbDayTable"),
-    }
+    # Initialize spreadsheet
+    sheet = Spreadsheet(
+        creds_file=f"{current_path}/google.json",
+        spreadsheet_name="Solar Database",
+        worksheet_name="octopusIn",
+    )
 
     # Octopus goodies
     octopusInfo = {
@@ -285,8 +222,7 @@ def main():
         "Tariff": os.environ.get("octopusTariff"),
         "APIKey": os.environ.get("octopusAPIKey"),
         "MPAN": os.environ.get("octopusMPAN"),
-        "SN": os.environ.get("octopusSN"),
-        "InTable": os.environ.get("octopusInTable"),
+        "SN": os.environ.get("octopusSN")
     }
 
     if len(sys.argv) < 2:
@@ -298,7 +234,7 @@ def main():
     # check to see if it's the first update
 
     # do the Octopus stuff - and return the overnight data if it's arrived
-    overnight = update_octopus_usage(dbInfo, octopusInfo, date_query)
+    overnight = update_octopus_usage(sheet, octopusInfo, date_query)
 
     # Send the message
     if overnight:
