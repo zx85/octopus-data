@@ -14,20 +14,11 @@ import requests
 import jmespath
 from pathlib import Path
 
-from includes import Spreadsheet
+from include.googlesheets import Spreadsheet
+from include.logger import log
 
 # I think this is python-telegram-bot
 import telegram
-import logging
-
-# Create a logger
-logger = logging.getLogger("")
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
 current_path=os.path.dirname(os.path.abspath(__file__))
 
@@ -52,8 +43,8 @@ def localtime(inputTime):
 
 # Push message doings
 def send_telegram_message(bot, chat_id, date_query, overnight):
-    logger.debug(f"running sendmessage function - chat_id is {chat_id}")
-    logger.debug("Building telegram message with overnight data")
+    log.debug(f"running sendmessage function - chat_id is {chat_id}")
+    log.debug("Building telegram message with overnight data")
     total_consumed = 0
     total_cost = 0
     message_str = f"Overnight usage for {date_query}:\n"
@@ -71,19 +62,19 @@ def send_telegram_message(bot, chat_id, date_query, overnight):
         total_consumed += hh["consumed"]
         total_cost += hh["consumed"] * hh["price"] / 100
     message_str += f"Consumed: {'{0:.3f}'.format(total_consumed)}kWh\nCost: £{'{0:.2f}'.format(total_cost)}"
-    logger.debug(f"Sending the telegram message: {message_str}")
+    log.debug(f"Sending the telegram message: {message_str}")
 
     bot.send_message(chat_id=chat_id, text=message_str)
 
 
 def localtime(inputTime):
-    logger.debug(f"running localtime function - localtime is {localtime}")
+    log.debug(f"running localtime function - localtime is {localtime}")
     return time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(inputTime))
 
 
 # Local time doings
 def utc_calc(time_string, day_diff=0):
-    logger.debug(
+    log.debug(
         f"running utc_calc function - time_string is {time_string} - day_diff is {day_diff}"
     )
     local = pytz.timezone("Europe/London")
@@ -94,7 +85,7 @@ def utc_calc(time_string, day_diff=0):
 
 
 def get_price_data(octopusInfo, date_query):
-    logger.info(f"running get_price_data function for {date_query}")
+    log.info(f"running get_price_data function for {date_query}")
     # print(f"Getting agile price data for {date_query}...")
     results = {}
     auth = "Basic " + base64.b64encode(octopusInfo["APIKey"].encode("UTF-8")).decode(
@@ -104,23 +95,23 @@ def get_price_data(octopusInfo, date_query):
     # print(f"URL is {url}")
     Session = requests.Session()
     header = {"Authorization": auth}
-    logger.debug(f"web service call to {url}")
+    log.debug(f"web service call to {url}")
     try:
         resp = Session.get(url, headers=header, timeout=60)
         status_code = resp.status_code
-        logger.debug(f"Response status code: {str(status_code)}")
-        logger.debug("\nHere is the resultant:")
-        logger.debug(json.dumps(resp.json()))
-        logger.debug("#####################\n")
+        log.debug(f"Response status code: {str(status_code)}")
+        log.debug("\nHere is the resultant:")
+        log.debug(json.dumps(resp.json()))
+        log.debug("#####################\n")
         results = resp.json()
     except Exception as e:
-        logger.error("Agile data request failed because " + str(e))
-    logger.info("end of get_price_data function")
+        log.error("Agile data request failed because " + str(e))
+    log.info("end of get_price_data function")
     return results
 
 
 def get_consumed_data(octopusInfo, date_query):
-    logger.info(f"running get_consumed_data function for {date_query}")
+    log.info(f"running get_consumed_data function for {date_query}")
     results = {}
     auth = "Basic " + base64.b64encode(octopusInfo["APIKey"].encode("UTF-8")).decode(
         "UTF-8"
@@ -129,22 +120,22 @@ def get_consumed_data(octopusInfo, date_query):
     # print(f"URL is {url}")
     Session = requests.Session()
     header = {"Authorization": auth}
-    logger.debug(f"web service call to {url}")
+    log.debug(f"web service call to {url}")
     try:
         resp = Session.get(url, headers=header, timeout=60)
         status_code = resp.status_code
-        logger.debug(f"Response status code: {str(status_code)}")
-        logger.debug("\nHere is the resultant:")
-        logger.debug(json.dumps(resp.json()))
-        logger.debug("#####################\n")
+        log.debug(f"Response status code: {str(status_code)}")
+        log.debug("\nHere is the resultant:")
+        log.debug(json.dumps(resp.json()))
+        log.debug("#####################\n")
         results = resp.json()
     except Exception as e:
-        logger.error(f"Consumption data request failed because {str(e)}")
+        log.error(f"Consumption data request failed because {str(e)}")
     return results
 
 
 def update_octopus_usage(sheet, octopusInfo, date_query):
-    logger.info(f"running update_octopus_usage function for {date_query}")
+    log.info(f"running update_octopus_usage function for {date_query}")
     price_data = get_price_data(octopusInfo, date_query)
     consumed_data = get_consumed_data(octopusInfo, date_query)
     results = True
@@ -153,33 +144,34 @@ def update_octopus_usage(sheet, octopusInfo, date_query):
 
     # Check validity of results
     if "results" not in price_data:
-        logger.warning("No JSON results in price_data - please try again later")
+        log.warning("No JSON results in price_data - please try again later")
         results = False
     else:
         if len(price_data["results"]) == 0:
-            logger.warning("Empty results set in price_data - please try again later")
+            log.warning("Empty results set in price_data - please try again later")
             results = False
 
     if "results" not in consumed_data:
-        logger.warning("No JSON results consumed_data - please try again later")
+        log.warning("No JSON results consumed_data - please try again later")
         results = False
     else:
         if len(consumed_data["results"]) == 0:
-            logger.warning(
+            log.warning(
                 "Empty results set in consumed_data - please try again later"
             )
             results = False
 
     if results:
-        logger.debug("We have consumed and price results, so carry on")
+        log.debug("We have consumed and price results, so carry on")
         last_overnight = []
 
-        logger.debug(f"Checking to see if there's already data for {date_query}")
+        log.debug(f"Checking to see if there's already data for {date_query}")
         # TODO: check the spreadsheet for data
 
-        logger.debug("Looping through the results of consumed_data")
+        log.debug("Looping through the results of consumed_data")
         for each_result in consumed_data["results"]:
             for each_price in price_data["results"]:
+                log.debug(f'Checking {each_price["valid_from"]} == {each_result["interval_start"]}')
                 id = {}
                 if each_price["valid_from"] == each_result["interval_start"]:
                     # this is where the database stuff comes in
@@ -192,15 +184,15 @@ def update_octopus_usage(sheet, octopusInfo, date_query):
                     id["price"] = each_price["value_inc_vat"]
                     if int(id["hour"]) >= 0 and int(id["hour"]) <= 6:
                         last_overnight.append(id)
-                    logger.debug(
+                    log.debug(
                         f"{id['year']}-{id['month']}-{id['day']} {id['hour']}:{id['minute']} - {id['consumed']} kWh @ £{id['price']/100}"
                     )
             # TODO: replace into the spreadsheet
         if new_data:
-            logger.debug("last_overnight is new - returning it")
+            log.debug("last_overnight is new - returning it")
         else:
-            logger.debug("last_overnight is not new - returning empty set")
-        return last_overnight
+            log.debug("last_overnight is not new - returning empty set")
+    return last_overnight
 
 
 def main():
