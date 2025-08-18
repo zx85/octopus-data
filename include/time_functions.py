@@ -5,6 +5,17 @@ import pytz
 
 from include.logger import log
 
+
+def local_time(inputTime):
+    log.debug(f"in local_time function - inputTime is {inputTime}")
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(inputTime))
+
+def local_time_now():
+    now=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+    log.debug(f"in local_time_now function - now is {now}")
+    return now
+
+
 def utc_calc(time_string, day_diff=0):
     log.debug(
         f"running utc_calc function - time_string is {time_string} - day_diff is {day_diff}"

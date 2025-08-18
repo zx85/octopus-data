@@ -68,7 +68,6 @@ class Octopus():
         consumed_data = self.get_consumed_data(date_query)
         results = True
         overnight = {}
-        new_data = False
 
         # Check validity of results
         if "results" not in price_data:
@@ -94,22 +93,35 @@ class Octopus():
             overnight = []
             usage = []
 
-            log.debug(f"Checking to see if there's already data for {date_query}")
-            # TODO: check the spreadsheet for data
-
             log.debug("Looping through the results of consumed_data")
+            # example of consumed data results (returned in local time):
+            # {
+            # "consumption": 0.002,
+            # "interval_start": "2025-08-17T02:00:00+01:00",
+            # "interval_end": "2025-08-17T02:30:00+01:00"
+            # },
             for consumed in consumed_data["results"]:
-                # consumed is in local time - trim after the +
+                # consumed is in local time - format it to 'YYYY-mm-dd HH:MM:SS'
                 consumed["interval_start_local"] = consumed["interval_start"].split("+")[0].replace('T',' ')
+
+                # example of price data results (returned in UTC):
+                # {
+                # "value_exc_vat": 15.75,
+                # "value_inc_vat": 16.5375,
+                # "valid_from": "2025-08-17T02:00:00Z",
+                # "valid_to": "2025-08-17T02:30:00Z",
+                # "payment_method": null
+                # },
                 for price in price_data["results"]:
-                    # price is in UTC - convert it to local
+                    # price is in UTC - convert it to local and format it to 'YYYY-mm-dd HH:MM:SS'
                     price["valid_from_local"]=utc_to_localtime(price["valid_from"])
                     id = {}
                     if price["valid_from_local"] == consumed["interval_start_local"]:
-                        # this is where the database stuff comes in
+                        # prepare the fields]
                         id["year"] = consumed["interval_start"][:4]
                         id["month"] = consumed["interval_start"][5:7]
                         id["day"] = consumed["interval_start"][8:10]
+                        id["date_string"] = consumed["interval_start"][:10]
                         id["hour"] = consumed["interval_start"][11:13]
                         id["minute"] = consumed["interval_start"][14:16]
                         id["consumed"] = consumed["consumption"]
