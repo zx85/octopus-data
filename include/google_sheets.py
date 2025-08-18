@@ -163,7 +163,7 @@ class Spreadsheet:
       Returns:
           bool: True if all three columns match, False otherwise
       """
-
+      converted_values=self.convert_types(target_values)
       found=False
       # Get all values from columns A, B, and C
       try:
@@ -172,10 +172,11 @@ class Spreadsheet:
 
           log.debug('Checking each row')    
           for row in range_data:
-              converted_row=self.convert_types(row)[:len(target_values)]
-              if converted_row==target_values:
-                  log.info('Found a matching row')
+              converted_row=self.convert_types(row)[:len(converted_values)]
+              if converted_row==converted_values:
+                  log.debug('Found a matching row')
                   found=True
+                  break
           
       except Exception as e:
           log.error(f"Error accessing sheet: {e}")

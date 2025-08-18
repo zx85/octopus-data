@@ -24,7 +24,7 @@ from pathlib import Path
 from include.google_sheets import Spreadsheet
 from include.octopus import Octopus
 from include.telegram import TelegramBot
-from include.time_functions import local_time_now
+from include.time_functions import validate_date, local_time_now
 
 from include.logger import log
 
@@ -40,6 +40,18 @@ octopus_info = {
 }
 
 def main():
+
+    if len(sys.argv) < 2:
+        print("Usage: getday.py yyyy-mm-dd")
+        print("eg. getday.py 2023-01-15")
+        exit(1)
+    date_query = sys.argv[1]
+    
+    if not validate_date(date_query):
+        print("Invalid date. Usage: getday.py yyyy-mm-dd")
+        print("eg. getday.py 2023-01-15")
+        exit(1)
+
     # Bot business
     telegram_bot=TelegramBot(
         bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
@@ -57,43 +69,38 @@ def main():
 
     octopus=Octopus(octopus_info)
 
-    if len(sys.argv) < 2:
-        print("Usage: getday.py yyyy-mm-dd")
-        print("eg. getday.py 2023-01-15")
-        exit(1)
-    date_query = sys.argv[1]
-
     # check the spreadsheet to see if it's the first update for the day
-    update_spreadsheet=False
+    if not sheet.check_values_in_columns(date_query.split('-')):
+        log.debug(f'No data for {date_query.split("-")}')
+        update_spreadsheet=True
+        # do the Octopus stuff - and return the overnight data if it's arrived
+        usage, overnight = octopus.get_usage(date_query)
 
-    # do the Octopus stuff - and return the overnight data if it's arrived
-    usage, overnight = octopus.get_usage(date_query)
-
-    if usage and update_spreadsheet:
-        # add data to the spreadsheet if there's new data
-        log.debug('Adding data to the spreadsheet now')
-        for usage_row in reversed(usage):
-            # Add the extra elements
-            usage_row['cost']=usage_row['consumed']*usage_row['price']/100
-            usage_row['updated_timstm']=local_time_now()
-            log.debug(f'usage_row is: {json.dumps(usage_row,indent=2)}')
-        # Send the message about the overnight data
-            field_list=[ 'year',
-                        'month',
-                        'day',
-                        'date_string',
-                        'hour',
-                        'minute',
-                        'consumed',
-                        'price',
-                        'updated_timstm',
-                        'cost']
-            new_row_data = [usage_row.get(field,'') for field in field_list]
-            sheet.worksheet.append_row(new_row_data)
-            
-    log.debug(f'Overnight is {overnight}')
-    if overnight:
-        telegram_bot.send_telegram_message(date_query, overnight)
+        if usage and update_spreadsheet:
+            # add data to the spreadsheet if there's new data
+            log.debug('Adding data to the spreadsheet now')
+            for usage_row in reversed(usage):
+                # Add the extra elements
+                usage_row['cost']=usage_row['consumed']*usage_row['price']/100
+                usage_row['updated_timstm']=local_time_now()
+                log.debug(f'usage_row is: {json.dumps(usage_row,indent=2)}')
+            # Send the message about the overnight data
+                field_list=[ 'year',
+                            'month',
+                            'day',
+                            'date_string',
+                            'hour',
+                            'minute',
+                            'consumed',
+                            'price',
+                            'updated_timstm',
+                            'cost']
+                new_row_data = [usage_row.get(field,'') for field in field_list]
+                sheet.worksheet.append_row(new_row_data)
+                
+        log.debug(f'Overnight is {overnight}')
+        if overnight:
+            telegram_bot.send_telegram_message(date_query, overnight)
 
 if __name__ == "__main__":
     main()

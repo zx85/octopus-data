@@ -5,6 +5,12 @@ import pytz
 
 from include.logger import log
 
+def validate_date(date_str: str) -> bool:
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 def local_time(inputTime):
     log.debug(f"in local_time function - inputTime is {inputTime}")
